@@ -19,8 +19,6 @@ example_module/
 
 Modules are loaded dynamically by the job manager. Loader looks for all folders following above structure under the provided path.
 
-```
-
 ### modules.yaml specification
 
 ```yaml

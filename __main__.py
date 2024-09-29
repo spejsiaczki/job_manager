@@ -4,19 +4,13 @@ import os
 import uuid
 import asyncio
 import shutil
-from job_manager import JobManager
-from artifact_manager import ArtifactManager
-from utils import CustomFormatter
+from job_manager.manager import JobManager
+from job_manager.artifact_manager import ArtifactManager
+from job_manager.utils import CustomFormatter
 
 # Logger setup
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
-
-default_handler = logging.StreamHandler()
-default_handler.setLevel(logging.DEBUG)
-default_handler.setFormatter(CustomFormatter())
-
-logger.addHandler(default_handler)
 
 # Argument parser
 parser = argparse.ArgumentParser(description="Executes media processing pipeline")
@@ -27,6 +21,12 @@ parser.add_argument("--modules_dir", type=str, help="module search directory pat
 
 async def run():
     args = parser.parse_args()
+
+    default_handler = logging.StreamHandler()
+    default_handler.setLevel(logging.DEBUG)
+    default_handler.setFormatter(CustomFormatter())
+
+    logger.addHandler(default_handler)
 
     logging.info("Starting job manager...")
 

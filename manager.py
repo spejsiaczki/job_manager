@@ -4,7 +4,7 @@ import logging
 import asyncio
 from pathlib import Path
 from dataclasses import dataclass, field
-from artifact_manager import ArtifactManager, Artifact
+from job_manager.artifact_manager import ArtifactManager, Artifact
 
 # Stores module definition and allows for abstracted execution in the pipeline
 class Module:

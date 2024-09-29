@@ -220,7 +220,12 @@ class Job:
             
             self.steps.append(Step(name=step['name'], modules=entries))
 
-
+@dataclass
+class JobManagerProgressUpdate:
+    job_id: str
+    current_step: int
+    total_steps: int
+    step_name: str
 class JobManager:
     modules: list[Module]
     artifact_manager: ArtifactManager
@@ -240,6 +245,7 @@ class JobManager:
                 if not os.path.exists(manifest_file):
                     continue
 
+                # Load available modules
                 try:
                     module = Module(manifest_file)
                     self.modules.append(module)
@@ -248,15 +254,30 @@ class JobManager:
                     logging.error(f'Failed to load module {f}: {e}')
 
 
-    async def run_job(self, job: Job, job_id: str):        
+    async def run_job(self, job: Job, job_id: str, progress_cb=None):        
         logging.info(f'Running job {job.name} v{job.version}, id: {job_id}')
 
         logger = logging.getLogger(f'job_{job_id[:8]}')
 
         for step in job.steps:
             logger.info(f'Running step {step.name}')
-            await asyncio.sleep(0.1)
 
+            # Send progress update
+            if progress_cb is not None:
+                update = JobManagerProgressUpdate(
+                    job_id,
+                    job.steps.index(step) + 1,
+                    len(job.steps),
+                    step.name
+                )
+                try:
+                    progress_cb(update)
+                except Exception as e:
+                    logger.error(f'Failed to send progress update: {e}')
+
+            await asyncio.sleep(1)
+
+            # Gather tasks to be run during current step
             tasks = []
             for entry in step.modules:
                 module = next((m for m in self.modules if m.name == entry.module), None)
@@ -269,8 +290,10 @@ class JobManager:
                 coroutine = module.run(entry.inputs, entry.outputs, job_id, self.artifact_manager)
                 tasks.append(asyncio.create_task(coroutine, name=module.name))
             
+            # Run step tasks concurrently
             await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED)
 
+            # Check for failed tasks
             for task in tasks:
                 if task.exception() is not None or task.result() != 0:
                     reason = task.exception() if task.exception() is not None else f'Exit code {task.result()}'

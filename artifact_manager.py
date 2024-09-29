@@ -17,10 +17,12 @@ class ArtifactManager:
     # Files are placed either in public or temp folder, depending on the public flag
     ARTIFACT_PUBLIC_FOLDER = 'public'
     ARTIFACT_TEMP_FOLDER = 'temp'
-    jobs: list[str] = []
-    job_input_artifact: dict[str, Artifact] = {}
+    jobs: list[str]
+    job_input_artifact: dict[str, Artifact]
 
     def __init__(self, storage_path: Path):
+        self.jobs = []
+        self.job_input_artifact = {}
         self.storage_folder = os.path.join(storage_path, self.ARTIFACT_STORAGE_FOLDER)
         
         # Create artifact storage folder

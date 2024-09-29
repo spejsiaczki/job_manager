@@ -3,7 +3,7 @@ import os
 import logging
 import asyncio
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from artifact_manager import ArtifactManager, Artifact
 
 # Stores module definition and allows for abstracted execution in the pipeline
@@ -11,10 +11,13 @@ class Module:
     name: str
     entrypoint: str
     description: str
-    inputs: list[Artifact] = []
-    outputs: list[Artifact] = []
+    inputs: list[Artifact]
+    outputs: list[Artifact]
 
     def __init__(self, manifest_file) -> None:
+        self.inputs = []
+        self.outputs = []
+
         with open(manifest_file, 'r') as f:
             self.manifest = yaml.load(f, Loader=yaml.SafeLoader)
 
@@ -112,9 +115,11 @@ class Module:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE)
         
+        logger = logging.getLogger(f'job_{job_id[:8]}')
+
         await asyncio.gather(
-            _read_stream(proc.stdout, lambda line: logging.info(f'{self.name}: {line.decode().strip()}')),
-            _read_stream(proc.stderr, lambda line: logging.error(f'{self.name}: {line.decode().strip()}'))
+            _read_stream(proc.stdout, lambda line: logger.info(f'{self.name}: {line.decode().strip()}')),
+            _read_stream(proc.stderr, lambda line: logger.error(f'{self.name}: {line.decode().strip()}'))
         )
 
         return await proc.wait()
@@ -122,21 +127,22 @@ class Module:
 @dataclass
 class StepModule:
     module: str
-    inputs: list[Artifact]
-    outputs: list[Artifact]
+    inputs: list[Artifact] = field(default_factory=list)
+    outputs: list[Artifact] = field(default_factory=list)
 
 @dataclass
 class Step:
     name: str
-    modules: list[StepModule]
+    modules: list[StepModule] = field(default_factory=list)
 
 class Job:
     name: str
     version: int
-    steps: list[Step] = []
+    steps: list[Step]
     input_artifact: Artifact
 
     def __init__(self, manifest_file) -> None:
+        self.steps = []
         with open(manifest_file, 'r') as f:
             manifest = yaml.load(f, Loader=yaml.SafeLoader)
             self._load_manifest(manifest)
@@ -189,8 +195,8 @@ class Job:
                             raise Exception('Step module input missing param_name field')
                         
                         public = False
-                        if 'public' in entry:
-                            public = entry['public']
+                        if 'public' in i:
+                            public = i['public']
                         
                         inputs.append(Artifact(file_type=i['type'], param_name=i['param_name'], name=i['name'], isPublic=public))
                 
@@ -216,10 +222,11 @@ class Job:
 
 
 class JobManager:
-    modules: list[Module] = []
+    modules: list[Module]
     artifact_manager: ArtifactManager
 
     def __init__(self, modules_dir: Path, artifact_manager: ArtifactManager) -> None:
+        self.modules = []
         self.modules_dir = modules_dir
         self.artifact_manager = artifact_manager
 
@@ -244,17 +251,20 @@ class JobManager:
     async def run_job(self, job: Job, job_id: str):        
         logging.info(f'Running job {job.name} v{job.version}, id: {job_id}')
 
+        logger = logging.getLogger(f'job_{job_id[:8]}')
+
         for step in job.steps:
-            logging.info(f'Running step {step.name}')
+            logger.info(f'Running step {step.name}')
+            await asyncio.sleep(0.1)
 
             tasks = []
             for entry in step.modules:
                 module = next((m for m in self.modules if m.name == entry.module), None)
                 if module is None:
-                    logging.error(f'Module not found: {entry.module}')
+                    logger.error(f'Module not found: {entry.module}')
                     continue
                 
-                logging.info(f'Running module {module.name}')
+                logger.info(f'Running module {module.name}')
                 
                 coroutine = module.run(entry.inputs, entry.outputs, job_id, self.artifact_manager)
                 tasks.append(asyncio.create_task(coroutine, name=module.name))
@@ -264,7 +274,7 @@ class JobManager:
             for task in tasks:
                 if task.exception() is not None or task.result() != 0:
                     reason = task.exception() if task.exception() is not None else f'Exit code {task.result()}'
-                    logging.error(f'Failed to run module {task.get_name()}: {reason}')
+                    logger.error(f'Failed to run module {task.get_name()}: {reason}')
 
         # Cleanup temp files
         self.artifact_manager.cleanup_job(job_id)
